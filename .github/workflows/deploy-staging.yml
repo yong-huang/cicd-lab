@@ -21,7 +21,8 @@ jobs:
           DID=""
           for i in $(seq 1 20); do
             DID=$(gh api repos/$GITHUB_REPOSITORY/deployments \
-              -f ref=$SHA -f environment=staging -f description="staging $VER" --jq .id 2>/dev/null) && break
+              -f ref=$SHA -f environment=staging -F auto_merge=false \
+              -f description="staging $VER" --jq .id 2>/dev/null) && break
             echo "commit status not ready (409), retry $i"; sleep 15
           done
           [ -n "$DID" ] || { echo "deployment creation failed"; exit 1; }

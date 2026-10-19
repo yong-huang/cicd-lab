@@ -1,31 +1,18 @@
-# trunk-based：合入 main 即自动部署 staging，并在 GitHub 记录 deployment
+# trunk-based：合入 main 即自动验证（staging 的 deployment 记录由编排器
+# 在 run 成功后经 gh api 创建——workflow 内自建会被自身 pending 状态 409）
 name: deploy-staging
 on:
   push:
     branches: [main]
 permissions:
-  deployments: write
   contents: read
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Record staging deployment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate release candidate on main
         run: |
-          SHA=$(git rev-parse HEAD); VER=$(cat app/VERSION)
-          # 同 commit 上其他 workflow（如 semantic-release）未跑完时 combined
-          # status=pending，deployments API 会 409——等它变绿再创建（重试 20×15s）
-          DID=""
-          for i in $(seq 1 20); do
-            DID=$(gh api repos/$GITHUB_REPOSITORY/deployments \
-              -f ref=$SHA -f environment=staging -F auto_merge=false \
-              -f description="staging $VER" --jq .id 2>/dev/null) && break
-            echo "commit status not ready (409), retry $i"; sleep 15
-          done
-          [ -n "$DID" ] || { echo "deployment creation failed"; exit 1; }
-          gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
-            -f state=success -f description="staging $VER deployed" >/dev/null
-          echo "staging deployed $VER @$SHA"
+          VER=$(cat app/VERSION)
+          bash app/test.sh
+          echo "staging candidate validated: $VER @$(git rev-parse --short HEAD)"

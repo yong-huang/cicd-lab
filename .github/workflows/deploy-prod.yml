@@ -9,7 +9,6 @@ on:
         type: boolean
         default: false
 permissions:
-  deployments: write
   contents: read
 jobs:
   deploy:
@@ -17,23 +16,13 @@ jobs:
     environment: production     # 审批门：required reviewer 放行才执行
     steps:
       - uses: actions/checkout@v4
-      - name: Record prod deployment
+      - name: Validate prod candidate
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BROKEN: ${{ inputs.broken }}
         run: |
-          SHA=$(git rev-parse HEAD); VER=$(cat app/VERSION)
-          # auto_merge=false：不被 commit combined status 阻塞（409 解法）
-          DID=$(gh api repos/$GITHUB_REPOSITORY/deployments \
-            -f ref=$SHA -f environment=production -F auto_merge=false \
-            -f description="prod $VER" --jq .id)
-          gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
-            -f state=in_progress >/dev/null
+          bash app/test.sh
+          VER=$(cat app/VERSION)
           if [ "$BROKEN" = "true" ]; then
-            gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
-              -f state=failure -f description="prod deploy failed (drill)" >/dev/null
             echo "prod deploy FAILED (drill)"; exit 1
           fi
-          gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
-            -f state=success -f description="prod $VER deployed" >/dev/null
-          echo "prod deployed $VER @$SHA"
+          echo "prod validated: $VER @$(git rev-parse --short HEAD)"

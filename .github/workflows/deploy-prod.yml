@@ -1,0 +1,37 @@
+# prod 金丝雀晋级：workflow_dispatch + environment 审批门（required reviewer）
+# inputs.broken=true 用于失败演练（供 DORA 变更失败率 / MTTR 取数）
+name: deploy-prod
+on:
+  workflow_dispatch:
+    inputs:
+      broken:
+        description: '注入失败（MTTR 演练）'
+        type: boolean
+        default: false
+permissions:
+  deployments: write
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production     # 审批门：required reviewer 放行才执行
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record prod deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BROKEN: ${{ inputs.broken }}
+        run: |
+          SHA=$(git rev-parse HEAD); VER=$(cat app/VERSION)
+          DID=$(gh api repos/$GITHUB_REPOSITORY/deployments \
+            -f ref=$SHA -f environment=production -f description="prod $VER" --jq .id)
+          gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
+            -f state=in_progress >/dev/null
+          if [ "$BROKEN" = "true" ]; then
+            gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
+              -f state=failure -f description="prod deploy failed (drill)" >/dev/null
+            echo "prod deploy FAILED (drill)"; exit 1
+          fi
+          gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
+            -f state=success -f description="prod $VER deployed" >/dev/null
+          echo "prod deployed $VER @$SHA"

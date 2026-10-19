@@ -1,0 +1,23 @@
+# trunk-based：合入 main 即自动部署 staging，并在 GitHub 记录 deployment
+name: deploy-staging
+on:
+  push:
+    branches: [main]
+permissions:
+  deployments: write
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record staging deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(git rev-parse HEAD); VER=$(cat app/VERSION)
+          DID=$(gh api repos/$GITHUB_REPOSITORY/deployments \
+            -f ref=$SHA -f environment=staging -f description="staging $VER" --jq .id)
+          gh api repos/$GITHUB_REPOSITORY/deployments/$DID/statuses \
+            -f state=success -f description="staging $VER deployed" >/dev/null
+          echo "staging deployed $VER @$SHA"
